@@ -37,6 +37,12 @@ __global__ void VectorAdd(float4 const *a, float4 const *b, float4 *c) {
 }
 
 /**
+ * Syntax to dynamically allocate shared memory, and then you pass as third parameter to your 
+ * CUDA kernel invocation the size of the shared memory array in bytes
+ */
+extern __shared__ float resultMatrix[];
+
+/**
  * Iteration 1: assume matrices are m x k, k x n, and the result will be m x n
  * There will be a thread for each element in the first input matrix.
  * Therefore each thread is associated to 
@@ -45,15 +51,19 @@ __global__ void VectorAdd(float4 const *a, float4 const *b, float4 *c) {
  *   - will produce a part of the result of the row having the same row index of the left matrix
  */
 __global__ void matmul(float const *a, float const *b, float *c, uint32_t m, uint32_t k, uint32_t n) {
-    // TODO: Assuming 1 block for now
-    uint32_t rowIndex = threadIdx.x;
+    uint32_t rowIndex = threadIdx.x + blockIdx.x;
     uint32_t colIndex = threadIdx.y;
 
     float leftElem = a[rowIndex * n + colIndex];
     for (uint32_t i = 0; i != n; ++i) {
         float rightElem = b[colIndex * n + i];
-        atomicAdd(&(c[rowIndex * n + i]), leftElem * rightElem);
+        atomicAdd(&(resultMatrix[rowIndex * n + i]), leftElem * rightElem);
     }
+
+    // synchronize all threads in a block, making sure that all writes to shared memory are finished
+    __syncthreads();
+
+    c[rowIndex * n + colIndex] = resultMatrix[rowIndex * n + colIndex];
 }
 
 /**
@@ -78,7 +88,7 @@ Timings kernel(float const *A_cpu, float const *B_cpu, float *C_cpu, uint32_t N,
     auto alloc = std::chrono::high_resolution_clock::now();
 
     // TODO: define the thread dimentions 
-    uint32_t blockSize = blkSize / 4; // <--------------------------- Remove /4 if you switch back to float in VectorAdd
+    uint32_t blockSize = blkSize >> 2; // <--------------------------- Remove /4 if you switch back to float in VectorAdd
     uint32_t gridSize = N / blkSize; // 32 x 32 = 1024
 
     // TODO: Issue the kernel on the GPU 
@@ -117,7 +127,8 @@ Timings matmulKernel(matmulKernel_input const &in) {
     uint32_t const numBytes =A_numBytes + B_numBytes + C_numBytes;
 
     float *A_gpu, *B_gpu, *C_gpu;
-    dim3 blockSize(in.numRowsFst, in.numColsFst);
+    uint32_t const gridSize = in.A_numel > 64 ? in.numRowsFst : 1;
+    dim3 const     blockSize(in.numRowsFst / gridSize, in.numColsFst);
 
     // create device pointers
     CUDA_CALL(cudaMalloc((void**)&A_gpu, numBytes));
@@ -130,7 +141,7 @@ Timings matmulKernel(matmulKernel_input const &in) {
     CUDA_CALL(cudaMemcpy(C_gpu, in.C_cpu, C_numBytes, cudaMemcpyHostToDevice));
     alloc = std::chrono::high_resolution_clock::now();
 
-    matmul<<<1, blockSize>>>(A_gpu, B_gpu, C_gpu, in.numRowsFst, in.numColsFst, in.numColsSnd);
+    matmul<<<gridSize, blockSize, C_numBytes>>>(A_gpu, B_gpu, C_gpu, in.numRowsFst, in.numColsFst, in.numColsSnd);
     CUDA_CALL(cudaDeviceSynchronize());
     kernel = std::chrono::high_resolution_clock::now();
 

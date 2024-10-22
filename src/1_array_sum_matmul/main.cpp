@@ -189,6 +189,9 @@ int main() {
     std::normal_distribution<float> dist{1.f, 0.5f};
 
     //addExercise(1U << 20U);
-    matrixMultiplicationExercise(2u<<10, 2u<<10, 2u<<10, dist, gen, false);
+
+    // Implementation now assumes that numRows and numCols are powers of two, number of columns first
+    // matrix must be a multiple of 4
+    matrixMultiplicationExercise(32, 16, 16, dist, gen, true);
 }
 
