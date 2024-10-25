@@ -1,0 +1,23 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build-cuda",
+            "type": "shell",
+            "command": "nvcc",
+            "args": [
+                "-g", // generate host debug symbols
+                "-G", // generate device debug symbols
+                "-o", "${workspaceFolder}/out",
+                "${workspaceFolder}/main.cpp",
+                "${workspaceFolder}/src/cuda_kernel.cu"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$nvcc"],
+            "detail": "Build CUDA Program"
+        }
+    ]
+}
